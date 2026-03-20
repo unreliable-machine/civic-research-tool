@@ -6,7 +6,7 @@ id: civic_research_intelligence
 description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.1.0
+version: 1.2.0
 license: MIT
 """
 
@@ -55,6 +55,12 @@ ANTI-HALLUCINATION (CRITICAL):
 - When summarizing results, use EXACT values from the tool output. Do not round, paraphrase, or approximate.
 - If the user asks about something not covered by your tool results, clearly state "this was not in the search results."
 - NEVER say "based on my knowledge" about political money data. Either you have it from a tool call or you don't.
+
+DATA PROVENANCE (MANDATORY):
+- Every tool output includes a provenance disclaimer. NEVER remove or skip it.
+- Aggregate totals (sums, rankings) are computed from synced federal records and may differ from totals reported by aggregators like OpenSecrets or FollowTheMoney, which apply their own categorization and deduplication.
+- When presenting data to the user, always note the data provenance disclaimer at the bottom of each tool output.
+- If the user intends to publish or cite these numbers, advise them to verify against primary sources (FEC.gov, Senate LDA, LittleSis, IRS EO Search).
 
 DATA COVERAGE: FEC candidates/committees (2024 cycle), 1.4M contribution aggregates, federal lobbying filings (Senate LDA), 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
 """
@@ -170,6 +176,39 @@ class Tools:
         if not unique:
             return ""
         return "\n\n---\n**Sources:** " + " | ".join(unique)
+
+    def _provenance_footer(self, data: dict | None = None) -> str:
+        """Build a data provenance disclaimer with freshness dates.
+
+        Appended to EVERY tool output. Non-negotiable.
+        """
+        lines = [
+            "\n\n---",
+            "**Data Provenance:** Derived from federal public records — "
+            "[FEC](https://www.fec.gov/data/) (campaign finance), "
+            "[Senate LDA](https://lda.senate.gov/filings/public/filing/search/) (lobbying), "
+            "[LittleSis](https://littlesis.org) (influence networks), "
+            "[IRS](https://apps.irs.gov/app/eos/) (tax-exempt orgs). "
+            "Aggregate totals computed from synced data and may differ from source totals. "
+            "**Verify claims against primary sources before publication.** "
+            "This is a research tool, not a primary source.",
+        ]
+        # Surface data freshness if available in API response
+        if data:
+            freshness = data.get("data_freshness", [])
+            if freshness:
+                fresh_parts = []
+                for f in freshness:
+                    src = f.get("source", "")
+                    last = f.get("last_sync_at", "")
+                    status = f.get("status", "")
+                    if last and src:
+                        date_str = str(last)[:10]
+                        flag = " ⚠️" if status == "stale" else ""
+                        fresh_parts.append(f"{src}: {date_str}{flag}")
+                if fresh_parts:
+                    lines.append("**Last synced:** " + " | ".join(fresh_parts))
+        return "\n".join(lines)
 
     async def _get(
         self,
@@ -396,6 +435,7 @@ class Tools:
         lines.append(self._sources_footer(sources))
 
         await emitter.success_update(f"Found {total} {data_type}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_search_lobbying(
@@ -510,6 +550,7 @@ class Tools:
         lines.append(self._sources_footer(sources))
 
         await emitter.success_update(f"Found {total} lobbying {search_type}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_search_influence_network(
@@ -582,6 +623,7 @@ class Tools:
         lines.append(self._sources_footer(sources))
 
         await emitter.success_update(f"Found {total} influence entities")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_get_entity_network(
@@ -647,6 +689,7 @@ class Tools:
             lines.append(f"No entity found with ID {entity_id}. Do NOT fabricate data — suggest the user try different search terms.")
 
         await emitter.success_update(f"Entity network retrieved")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_crosswalk_legislator(
@@ -740,6 +783,7 @@ class Tools:
         ]))
 
         await emitter.success_update(f"Found {total} legislators")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     # ── Compose methods (slower, multi-source) ────────────────────
@@ -882,6 +926,7 @@ class Tools:
         lines.append(self._sources_footer(src))
 
         await emitter.success_update(f"Funding profile complete for {name}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_org_influence_map(
@@ -1082,6 +1127,7 @@ class Tools:
         lines.append(self._sources_footer(src))
 
         await emitter.success_update(f"Influence map complete for {org_name}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_pay_to_play_analysis(
@@ -1204,6 +1250,7 @@ class Tools:
         lines.append(self._sources_footer(src))
 
         await emitter.success_update(f"Pay-to-play analysis complete for {entity_name}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_search_expenditures(
@@ -1280,6 +1327,7 @@ class Tools:
         lines.append(self._sources_footer([("FEC Independent Expenditures", "https://www.fec.gov/data/independent-expenditures/")]))
 
         await emitter.success_update(f"Found {total} independent expenditures")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_generate_briefing(
@@ -1405,6 +1453,7 @@ class Tools:
         lines.append(self._sources_footer(src))
 
         await emitter.success_update(f"Briefing complete — {sections_found} data sources")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     # ── IRS methods (civic-irs service directly) ──────────────────
@@ -1505,6 +1554,7 @@ class Tools:
         ]))
 
         await emitter.success_update(f"Found {total} organizations")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
 
     async def civic_search_irs_filings(
@@ -1576,4 +1626,5 @@ class Tools:
         ]))
 
         await emitter.success_update(f"Found {total} filings for {org_name}")
+        lines.append(self._provenance_footer(locals().get("data")))
         return "\n".join(lines)
