@@ -1,9 +1,13 @@
 """
 title: Civic Research Intelligence
-author: ChangeAgent AI
-description: Campaign finance, lobbying, influence networks, pay-to-play detection, and IRS 990 nonprofit filings — political money intelligence across FEC, Senate LDA, LittleSis, and IRS data.
-version: 0.1.0
-requirements: httpx
+author: Sev
+author_url: https://thechange.ai
+id: civic_research_intelligence
+description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
+required_open_webui_version: 0.4.0
+requirements: httpx, pydantic
+version: 1.0.0
+license: MIT
 """
 
 import asyncio
@@ -12,25 +16,47 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-SYSTEM_PROMPT_INJECTION = """
-### Civic Research Intelligence Tool
+SYSTEM_PROMPT_INJECTION = """You have access to the Civic Research Intelligence tool — a political money intelligence toolkit with 12 functions covering campaign finance, lobbying, influence networks, pay-to-play analysis, and IRS nonprofit data.
 
-**This tool provides campaign finance, lobbying, political influence, and IRS nonprofit data.**
+AVAILABLE FUNCTIONS:
+- civic_search_campaign_finance: Search FEC data — candidates, committees, or contribution aggregates
+- civic_search_lobbying: Search Senate LDA lobbying filings or lobbyist political contributions
+- civic_search_influence_network: Search the LittleSis power network (437K entities, 1.8M relationships)
+- civic_get_entity_network: Get full relationship map for a specific LittleSis entity
+- civic_crosswalk_legislator: Look up a legislator's IDs (bioguide, FEC, OpenSecrets, LittleSis) by name
+- civic_legislator_funding_profile: Get a legislator's complete funding profile (top donors, PACs, industries)
+- civic_org_influence_map: Map an organization's full political footprint (lobbying, PACs, influence network)
+- civic_pay_to_play_analysis: Cross-reference contributions + lobbying + contracts to detect pay-to-play patterns
+- civic_search_expenditures: Search Super PAC independent expenditures for/against candidates
+- civic_generate_briefing: Generate a comprehensive political money briefing (combines multiple sources)
+- civic_search_irs_organizations: Search 1.9M+ IRS exempt organizations
+- civic_search_irs_filings: Search 2.9M+ IRS 990 filings by EIN, org name, or form type
 
-For targeted queries:
-- **Who funds a politician?** → `crosswalk_legislator` to get their bioguide ID, then `legislator_funding_profile`
-- **Who's lobbying on an issue?** → `search_lobbying`
-- **What's an org's political influence?** → `org_influence_map`
-- **Is there a pay-to-play pattern?** → `pay_to_play_analysis`
-- **Who's connected to whom?** → `search_influence_network`, then `get_entity_network` for details
-- **Campaign donations / PAC spending** → `search_campaign_finance`
-- **Super PAC independent expenditures** → `search_expenditures`
-- **Nonprofit IRS filings** → `search_irs_organizations` to find them, `search_irs_filings` for 990 data
-- **Broad political money overview** → `generate_briefing` (combines lobbying, influence, and campaign finance)
+WHEN TO USE WHICH:
+- "Who funds this politician?" → civic_crosswalk_legislator (get IDs), then civic_legislator_funding_profile
+- "Who's lobbying on healthcare?" → civic_search_lobbying
+- "What's AIPAC's political influence?" → civic_org_influence_map
+- "Is there pay-to-play?" → civic_pay_to_play_analysis
+- "Who's connected to Koch?" → civic_search_influence_network, then civic_get_entity_network
+- "Show me Super PAC spending" → civic_search_expenditures
+- "Tell me about this nonprofit's IRS filings" → civic_search_irs_organizations, then civic_search_irs_filings
 
-**Use the other civic tools for:** legislation/bills (civic_legislators), grants/foundations (civic_funding), federal contracts (civic_procurement), court records (civic_court), nonprofits by sector (civic_organizations).
+BEHAVIORAL RULES:
+- When a user asks what you can do, list ALL 12 functions with brief descriptions. Never say you don't have a tool.
+- Before making a tool call, briefly tell the user what you're searching and why.
+- Be cautious with ambiguous queries — confirm what the user wants before firing multiple searches.
+- Always cite data sources (FEC, Senate LDA, LittleSis, IRS) with links when available.
+- If a search returns 0 results, suggest alternative search terms or a different function rather than giving up.
 
-**Data coverage:** 437K influence entities, 1.8M relationships, 1.4M contribution aggregates, federal lobbying filings, FEC candidates/committees, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
+ANTI-HALLUCINATION (CRITICAL):
+- ONLY present data returned by tool calls. NEVER invent dollar amounts, committee names, filing dates, candidate IDs, EINs, or relationships.
+- If a tool returns no results, say "no results found" — do NOT fill in with guesses or general knowledge.
+- NEVER fabricate URLs. Only include URLs returned by the tool or constructed from real IDs.
+- When summarizing results, use EXACT values from the tool output. Do not round, paraphrase, or approximate.
+- If the user asks about something not covered by your tool results, clearly state "this was not in the search results."
+- NEVER say "based on my knowledge" about political money data. Either you have it from a tool call or you don't.
+
+DATA COVERAGE: FEC candidates/committees (2024 cycle), 1.4M contribution aggregates, federal lobbying filings (Senate LDA), 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
 """
 
 
@@ -235,7 +261,7 @@ class Tools:
 
     # ── Search methods (fast, targeted) ───────────────────────────
 
-    async def search_campaign_finance(
+    async def civic_search_campaign_finance(
         self,
         query: str,
         data_type: str = "candidates",
@@ -246,9 +272,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Search FEC campaign finance data — candidates, committees, or contribution aggregates.
-        Use this for questions about who funds whom, PAC spending, political donations, and
-        campaign fundraising.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search FEC campaign finance data — candidates, committees, or contribution aggregates. Use this for questions about who funds whom, PAC spending, political donations, and campaign fundraising.</Function Definition>
 
         :param query: Search text (e.g., "sanders", "ActBlue", "tech PAC")
         :param data_type: What to search — "candidates" (default), "committees", or "contributions"
@@ -289,7 +315,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No {data_type} found for '{query}'. Try broadening your search or a different data_type."
+            return f"No {data_type} found for '{query}'. Try broadening your search or a different data_type. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## FEC {data_type.title()}\n\nFound **{total}** results for \"{query}\"\n"]
         sources = []
@@ -372,7 +398,7 @@ class Tools:
         await emitter.success_update(f"Found {total} {data_type}")
         return "\n".join(lines)
 
-    async def search_lobbying(
+    async def civic_search_lobbying(
         self,
         query: str,
         search_type: str = "filings",
@@ -381,8 +407,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Search federal lobbying data from Senate LDA filings. Find who lobbies whom about
-        what, lobbying spend by issue, and lobbyist-to-Congress contribution disclosures.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search federal lobbying data from Senate LDA filings. Find who lobbies whom about what, lobbying spend by issue, and lobbyist-to-Congress contribution disclosures.</Function Definition>
 
         :param query: Search text (e.g., "homelessness", "Vectis DC", "defense appropriations")
         :param search_type: "filings" (lobbying registrations, default) or "contributions" (lobbyist political contributions)
@@ -415,7 +442,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No lobbying {search_type} found for '{query}'. Try broadening your search."
+            return f"No lobbying {search_type} found for '{query}'. Try broadening your search. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## Lobbying {search_type.title()}\n\nFound **{total}** results for \"{query}\"\n"]
         sources = []
@@ -485,7 +512,7 @@ class Tools:
         await emitter.success_update(f"Found {total} lobbying {search_type}")
         return "\n".join(lines)
 
-    async def search_influence_network(
+    async def civic_search_influence_network(
         self,
         query: str,
         entity_type: Optional[str] = None,
@@ -493,9 +520,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Search the LittleSis power network — 437K entities and 1.8M relationships mapping
-        who's connected to whom in politics, business, and government. Use this to find
-        people and organizations and their relationship counts.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search the LittleSis power network — 437K entities and 1.8M relationships mapping who's connected to whom in politics, business, and government. Use this to find people and organizations and their relationship counts.</Function Definition>
 
         :param query: Search text (e.g., "Koch", "Goldman Sachs", "Pelosi")
         :param entity_type: Filter by entity type (e.g., "Person", "Org")
@@ -519,7 +546,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No influence entities found for '{query}'. Try a different spelling or broader search."
+            return f"No influence entities found for '{query}'. Try a different spelling or broader search. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## Influence Network Entities\n\nFound **{total}** results for \"{query}\"\n"]
         sources = []
@@ -557,16 +584,16 @@ class Tools:
         await emitter.success_update(f"Found {total} influence entities")
         return "\n".join(lines)
 
-    async def get_entity_network(
+    async def civic_get_entity_network(
         self,
         entity_id: int,
         page: int = 1,
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Get the full relationship map for a specific LittleSis entity — shows all connections
-        including board memberships, donations, lobbying ties, family relationships, and more.
-        Use after search_influence_network to drill into a specific person or organization.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get the full relationship map for a specific LittleSis entity — shows all connections including board memberships, donations, lobbying ties, family relationships, and more. Use after civic_search_influence_network to drill into a specific person or organization.</Function Definition>
 
         :param entity_id: LittleSis entity ID (from search_influence_network results)
         :param page: Page number for relationships (default: 1)
@@ -615,14 +642,14 @@ class Tools:
                 if total > page * 25:
                     lines.append(f"_Showing page {page} of {(total + 24) // 25}. Use page={page + 1} for more._")
             else:
-                lines.append("\nNo relationships found for this entity.")
+                lines.append("\nNo relationships found for this entity. Do NOT fabricate data — suggest the user try different search terms.")
         elif not entity_data:
-            lines.append(f"No entity found with ID {entity_id}.")
+            lines.append(f"No entity found with ID {entity_id}. Do NOT fabricate data — suggest the user try different search terms.")
 
         await emitter.success_update(f"Entity network retrieved")
         return "\n".join(lines)
 
-    async def crosswalk_legislator(
+    async def civic_crosswalk_legislator(
         self,
         query: str,
         state: Optional[str] = None,
@@ -631,9 +658,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Look up a legislator's cross-referenced IDs — maps between bioguide, FEC, Open States,
-        and OpenSecrets identifiers. Essential first step before calling legislator_funding_profile.
-        Use this when you need to find a legislator's bioguide_id or other identifiers.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Look up a legislator's cross-referenced IDs — maps between bioguide, FEC, Open States, and OpenSecrets identifiers. Essential first step before calling civic_legislator_funding_profile.</Function Definition>
 
         :param query: Legislator name (e.g., "Pelosi", "Sanders", "Schumer")
         :param state: Two-letter state code filter (e.g., "CA", "VT")
@@ -658,7 +685,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No legislators found for '{query}'. Try a different spelling or just the last name."
+            return f"No legislators found for '{query}'. Try a different spelling or just the last name. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## Legislator ID Crosswalk\n\nFound **{total}** results for \"{query}\"\n"]
 
@@ -717,17 +744,16 @@ class Tools:
 
     # ── Compose methods (slower, multi-source) ────────────────────
 
-    async def legislator_funding_profile(
+    async def civic_legislator_funding_profile(
         self,
         bioguide_id: str,
         identifier_type: str = "bioguide",
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Get a complete money profile for a legislator — cross-references FEC campaign finance,
-        linked committees, independent expenditures for/against, lobbying filings mentioning
-        them, and LittleSis influence relationships. The most comprehensive view of who funds
-        a politician and their financial connections.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get a complete money profile for a legislator — cross-references FEC campaign finance, linked committees, independent expenditures, lobbying filings, and LittleSis influence relationships. Use after civic_crosswalk_legislator to get the bioguide ID.</Function Definition>
 
         :param bioguide_id: The legislator's identifier (bioguide ID by default, e.g., "S000033" for Bernie Sanders)
         :param identifier_type: Type of identifier — "bioguide" (default), "openstates", or "fec"
@@ -858,15 +884,15 @@ class Tools:
         await emitter.success_update(f"Funding profile complete for {name}")
         return "\n".join(lines)
 
-    async def org_influence_map(
+    async def civic_org_influence_map(
         self,
         org_name: str,
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Map an organization's full political footprint — lobbying (as client and registrant),
-        FEC committees/PACs, Super PAC spending, and LittleSis influence relationships.
-        The comprehensive view of how an organization wields political influence.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Map an organization's full political footprint — lobbying (as client and registrant), FEC committees/PACs, Super PAC spending, and LittleSis influence relationships. Use this for a comprehensive view of how an organization wields political influence.</Function Definition>
 
         :param org_name: Organization name (e.g., "ExxonMobil", "National Alliance to End Homelessness", "Koch Industries")
         :return: Organization influence report with lobbying, committees, expenditures, and network relationships.
@@ -886,6 +912,69 @@ class Tools:
             return f"⚠️ Org influence data unavailable: {error}. Try again in a moment."
 
         lines = [f"## Influence Map: {org_name}\n"]
+
+        # Aggregate summary (headline numbers from full dataset)
+        summary = data.get("summary")
+        if summary:
+            total_ie = summary.get("total_independent_expenditures", 0)
+            total_lobby = summary.get("total_lobbying_spend", 0)
+            committee_count = summary.get("committee_count", 0)
+            rel_count = summary.get("influence_relationship_count", 0)
+
+            if total_ie or total_lobby or committee_count:
+                lines.append("### Financial Summary\n")
+                if total_ie:
+                    lines.append(f"- **Total Independent Expenditures:** {self._fmt_money(total_ie)}")
+                if total_lobby:
+                    lines.append(f"- **Total Lobbying Spend:** {self._fmt_money(total_lobby)}")
+                if committee_count:
+                    by_type = summary.get("committees_by_type", {})
+                    type_str = ", ".join(f"{v} {k}" for k, v in by_type.items()) if by_type else str(committee_count)
+                    lines.append(f"- **FEC Committees/PACs:** {type_str}")
+                if rel_count:
+                    lines.append(f"- **Influence Network:** {rel_count} relationships")
+                lines.append("")
+
+            # Spending by cycle
+            cycles = summary.get("expenditures_by_cycle", [])
+            if cycles:
+                lines.append("### Spending by Election Cycle\n")
+                lines.append("| Cycle | Supporting | Opposing | Total | Records |")
+                lines.append("|-------|-----------|---------|-------|---------|")
+                for c in cycles[:6]:
+                    lines.append(
+                        f"| {c['cycle']} | {self._fmt_money(c['total_supporting'])} "
+                        f"| {self._fmt_money(c['total_opposing'])} "
+                        f"| {self._fmt_money(c['total'])} | {c['count']} |"
+                    )
+                lines.append("")
+
+            # Lobbying by year
+            lobby_years = summary.get("lobbying_by_year", [])
+            if lobby_years:
+                lines.append("### Lobbying by Year\n")
+                lines.append("| Year | Income | Expense | Filings |")
+                lines.append("|------|--------|---------|---------|")
+                for ly in lobby_years[:6]:
+                    lines.append(
+                        f"| {ly['year']} | {self._fmt_money(ly['total_income'])} "
+                        f"| {self._fmt_money(ly['total_expense'])} | {ly['filing_count']} |"
+                    )
+                lines.append("")
+
+            # Top recipients
+            top = summary.get("top_recipients", [])
+            if top:
+                lines.append("### Top Expenditure Targets\n")
+                lines.append("| Candidate | Direction | Amount | Count |")
+                lines.append("|-----------|-----------|--------|-------|")
+                for r in top[:10]:
+                    direction = "Supporting" if r["support_oppose"] == "S" else "Opposing"
+                    lines.append(
+                        f"| {r['candidate_name']} | {direction} "
+                        f"| {self._fmt_money(r['total_amount'])} | {r['count']} |"
+                    )
+                lines.append("")
 
         # Lobbying as client
         client_filings = data.get("lobbying_as_client", [])
@@ -969,7 +1058,7 @@ class Tools:
 
         # Empty state
         if not any([client_filings, reg_filings, committees, expenditures, entity, rels]):
-            lines.append(f"No political influence data found for '{org_name}'. Try an alternative name or parent company.")
+            lines.append(f"No political influence data found for '{org_name}'. Try an alternative name or parent company. Do NOT fabricate data — suggest the user try different search terms.")
 
         # Data freshness
         warnings = data.get("stale_data_warnings", [])
@@ -995,15 +1084,15 @@ class Tools:
         await emitter.success_update(f"Influence map complete for {org_name}")
         return "\n".join(lines)
 
-    async def pay_to_play_analysis(
+    async def civic_pay_to_play_analysis(
         self,
         entity_name: str,
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Cross-reference an entity's campaign contributions, lobbying filings, and government
-        contracts to detect pay-to-play patterns. Shows overlap score indicating how many
-        dimensions (contributions, lobbying, contracts) the entity appears in.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Cross-reference an entity's campaign contributions, lobbying filings, and government contracts to detect pay-to-play patterns. Shows overlap score indicating how many dimensions the entity appears in.</Function Definition>
 
         :param entity_name: Entity name to investigate (e.g., "Lockheed Martin", "Raytheon", "Boeing")
         :return: Pay-to-play analysis with contributions, lobbying, contracts, and overlap score.
@@ -1092,7 +1181,7 @@ class Tools:
 
         # Empty state
         if not any([contributions, lobbying, awards]):
-            lines.append(f"No pay-to-play data found for '{entity_name}'. Try the parent company name or a common alias.")
+            lines.append(f"No pay-to-play data found for '{entity_name}'. Try the parent company name or a common alias. Do NOT fabricate data — suggest the user try different search terms.")
 
         # Data freshness
         warnings = data.get("stale_data_warnings", [])
@@ -1117,7 +1206,7 @@ class Tools:
         await emitter.success_update(f"Pay-to-play analysis complete for {entity_name}")
         return "\n".join(lines)
 
-    async def search_expenditures(
+    async def civic_search_expenditures(
         self,
         query: str,
         candidate_id: Optional[str] = None,
@@ -1128,9 +1217,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Search FEC independent expenditures — Super PAC spending for or against candidates.
-        These are expenditures made by committees (PACs, Super PACs) that are not coordinated
-        with the candidate's campaign.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search FEC independent expenditures — Super PAC spending for or against candidates. Use this for expenditures made by committees (PACs, Super PACs) that are not coordinated with the candidate's campaign.</Function Definition>
 
         :param query: Search text (e.g., committee name, candidate name)
         :param candidate_id: FEC candidate ID to filter expenditures for/against a specific candidate
@@ -1158,7 +1247,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No independent expenditures found for '{query}'. Try a different search term."
+            return f"No independent expenditures found for '{query}'. Try a different search term. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## Independent Expenditures\n\nFound **{total}** results for \"{query}\"\n"]
 
@@ -1193,16 +1282,15 @@ class Tools:
         await emitter.success_update(f"Found {total} independent expenditures")
         return "\n".join(lines)
 
-    async def generate_briefing(
+    async def civic_generate_briefing(
         self,
         query: str,
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Generate a multi-source intelligence briefing on any political topic by combining
-        lobbying, influence network, and campaign finance data. Use this for broad questions
-        like "tell me about AI regulation lobbying" or "who's involved in housing policy."
-        Pulls from multiple endpoints and synthesizes results.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Generate a multi-source intelligence briefing on any political topic by combining lobbying, influence network, and campaign finance data. Use this for broad questions like "tell me about AI regulation lobbying" or "who's involved in housing policy."</Function Definition>
 
         :param query: Topic to research (e.g., "AI regulation", "homelessness policy", "defense spending")
         :return: Intelligence briefing combining lobbying filings, influence entities, and campaign finance data.
@@ -1304,7 +1392,7 @@ class Tools:
                 return f"⚠️ Intelligence briefing unavailable — data sources returned errors: {'; '.join(all_errors)}"
             else:
                 await emitter.success_update("Briefing complete")
-                return f"No political intelligence data found for '{query}'. Try more specific terms like a person, organization, or policy area name."
+                return f"No political intelligence data found for '{query}'. Try more specific terms like a person, organization, or policy area name. Do NOT fabricate data — suggest the user try different search terms."
 
         lines.append("---")
         lines.append(f"_To dig deeper: `search_lobbying(\"{query}\")`, `search_influence_network(\"{query}\")`, or `org_influence_map(\"org name\")` for a specific organization._")
@@ -1321,7 +1409,7 @@ class Tools:
 
     # ── IRS methods (civic-irs service directly) ──────────────────
 
-    async def search_irs_organizations(
+    async def civic_search_irs_organizations(
         self,
         query: str,
         state: Optional[str] = None,
@@ -1334,9 +1422,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Search IRS-registered tax-exempt organizations from the Business Master File (2.9M orgs).
-        Find nonprofits, charities, foundations, and other exempt organizations by name, state,
-        NTEE classification, or asset size.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search IRS-registered tax-exempt organizations from the Business Master File (2.9M orgs). Find nonprofits, charities, foundations, and other exempt organizations by name, state, NTEE classification, or asset size.</Function Definition>
 
         :param query: Organization name search (e.g., "Red Cross", "habitat for humanity")
         :param state: Two-letter state code filter
@@ -1367,7 +1455,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No IRS exempt organizations found for '{query}'. Try a different name or broader search."
+            return f"No IRS exempt organizations found for '{query}'. Try a different name or broader search. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## IRS Exempt Organizations\n\nFound **{total}** results for \"{query}\"\n"]
 
@@ -1419,7 +1507,7 @@ class Tools:
         await emitter.success_update(f"Found {total} organizations")
         return "\n".join(lines)
 
-    async def search_irs_filings(
+    async def civic_search_irs_filings(
         self,
         ein: str,
         form_type: Optional[str] = None,
@@ -1427,9 +1515,9 @@ class Tools:
         __event_emitter__: Callable[[dict], Any] = None,
     ) -> str:
         """
-        Get all IRS 990 filings for a nonprofit by EIN — shows revenue, expenses, and assets
-        over time. Use after search_irs_organizations to drill into a specific organization's
-        filing history.
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get all IRS 990 filings for a nonprofit by EIN — shows revenue, expenses, and assets over time. Use after civic_search_irs_organizations to drill into a specific organization's filing history.</Function Definition>
 
         :param ein: Employer Identification Number (e.g., "13-1837418" or "131837418")
         :param form_type: Filter by form type (e.g., "990", "990EZ", "990PF")
@@ -1453,7 +1541,7 @@ class Tools:
 
         if not items:
             await emitter.success_update("Search complete")
-            return f"No 990 filings found for EIN {ein}. The organization may not have filed electronically, or try `search_irs_organizations` to verify the EIN."
+            return f"No 990 filings found for EIN {ein}. The organization may not have filed electronically, or try `civic_search_irs_organizations` to verify the EIN. Do NOT fabricate data — suggest the user try different search terms."
 
         lines = [f"## IRS 990 Filings: {org_name}\n\nEIN: {ein} | **{total}** filings found\n"]
 
