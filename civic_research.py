@@ -3,10 +3,10 @@ title: Civic Research Intelligence
 author: Sev
 author_url: https://thechange.ai
 id: civic_research_intelligence
-description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
+description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, IRS 990 nonprofit filings, GovTrack legislators, Congress bills/votes, and lobbying-bill crosswalks.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.5.0
+version: 1.6.0
 license: MIT
 """
 
@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-SYSTEM_PROMPT_INJECTION = """You have access to the Civic Research Intelligence tool — a political money intelligence toolkit with 12 functions covering campaign finance, lobbying, influence networks, pay-to-play analysis, and IRS nonprofit data.
+SYSTEM_PROMPT_INJECTION = """You have access to the Civic Research Intelligence tool — a political money intelligence toolkit with 16 functions covering campaign finance, lobbying, influence networks, pay-to-play analysis, IRS nonprofit data, legislators, Congress bills/votes, and lobbying-bill crosswalks.
 
 AVAILABLE FUNCTIONS:
 - civic_search_campaign_finance: Search FEC data — candidates, committees, or contribution aggregates
@@ -31,6 +31,10 @@ AVAILABLE FUNCTIONS:
 - civic_generate_briefing: Generate a comprehensive political money briefing (combines multiple sources)
 - civic_search_irs_organizations: Search 1.9M+ IRS exempt organizations
 - civic_search_irs_filings: Search 2.9M+ IRS 990 filings by EIN, org name, or form type
+- civic_search_legislators_govtrack: Search 12,800+ historical and current legislators (finds former members like Bowman)
+- civic_get_bill_details: Get bill sponsors, cosponsors, status, and policy area from Congress.gov
+- civic_get_bill_votes: Get per-legislator roll call votes on a specific bill
+- civic_get_lobbying_bills: Get all bills referenced in a lobbying filing
 
 WHEN TO USE WHICH:
 - "Who funds this politician?" → civic_crosswalk_legislator (get IDs), then civic_legislator_funding_profile
@@ -40,9 +44,13 @@ WHEN TO USE WHICH:
 - "Who's connected to Koch?" → civic_search_influence_network, then civic_get_entity_network
 - "Show me Super PAC spending" → civic_search_expenditures
 - "Tell me about this nonprofit's IRS filings" → civic_search_irs_organizations, then civic_search_irs_filings
+- "Find Jamaal Bowman" (former legislator) → civic_search_legislators_govtrack
+- "What bills is AIPAC lobbying on?" → civic_search_lobbying, then civic_get_lobbying_bills(filing_uuid), then civic_get_bill_details
+- "How did Congress vote on H.R. 1422?" → civic_get_bill_votes(118, "hr", 1422)
+- "What's in this bill?" → civic_get_bill_details(congress, type, number)
 
 BEHAVIORAL RULES:
-- When a user asks what you can do, list ALL 12 functions with brief descriptions. Never say you don't have a tool.
+- When a user asks what you can do, list ALL 16 functions with brief descriptions. Never say you don't have a tool.
 - Before making a tool call, briefly tell the user what you're searching and why.
 - Be cautious with ambiguous queries — confirm what the user wants before firing multiple searches.
 - Always cite data sources (FEC, Senate LDA, LittleSis, IRS) with links when available.
@@ -65,7 +73,7 @@ _Data from federal public records: FEC, Senate LDA, LittleSis, IRS. FEC candidat
 
 This footer is NOT optional. Keep it small and subtle — one line of italic text, not bold headers. If you write a response using civic research tool data and do not include this footer, you have failed the task.
 
-DATA COVERAGE: FEC candidates/committees (2024 cycle), expenditures and lobbying (current through 2026 cycle as filed), 1.4M contribution aggregates, 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
+DATA COVERAGE: FEC candidates/committees (2024 cycle), expenditures and lobbying (current through 2026 cycle as filed), 1.4M contribution aggregates, 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings (with 13 years of ProPublica backfill), 12,800+ legislators (historical + current via GovTrack), Congress bills with sponsors/cosponsors/votes, lobbying-to-bill crosswalks. Federal data only — state campaign finance not yet included.
 """
 
 
@@ -1636,4 +1644,288 @@ class Tools:
 
         await emitter.success_update(f"Found {total} filings for {org_name}")
         lines.append(self._provenance_footer(locals().get("data")))
+        return "\n".join(lines)
+
+    # ── Legislative methods (GovTrack, Congress.gov, lobbying-bill crosswalk) ──
+
+    async def civic_search_legislators_govtrack(
+        self,
+        query: str,
+        state: Optional[str] = None,
+        party: Optional[str] = None,
+        in_office: Optional[bool] = None,
+        page: int = 1,
+        __event_emitter__: Callable[[dict], Any] = None,
+    ) -> str:
+        """
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Search 12,800+ historical and current legislators from GovTrack. Use this to find former members of Congress (e.g., Bowman, Bush) that the crosswalk can't find. Returns bioguide_id for crosswalk to other datasets.</Function Definition>
+
+        :param query: Name search (e.g., "Bowman", "Bush", "Pelosi")
+        :param state: Two-letter state code filter
+        :param party: Party filter (e.g., "Democrat", "Republican")
+        :param in_office: Filter by current office status (true/false)
+        :param page: Page number (default: 1)
+        :return: Legislators with GovTrack IDs, bioguide IDs, state, party, and office status.
+        """
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.progress_update(f"Searching GovTrack legislators: {query}")
+
+        data, error = await self._get(self._irs_url(), "/api/legislative/persons", {
+            "q": query, "state": state, "party": party,
+            "in_office": in_office, "page": page, "page_size": 25,
+        })
+
+        if error:
+            await emitter.error_update(error)
+            return f"⚠️ GovTrack legislator data unavailable: {error}. Try again in a moment."
+
+        items = data.get("results", [])
+        total = data.get("total_results", len(items))
+
+        if not items:
+            await emitter.success_update("Search complete")
+            return f"No legislators found for '{query}'. Try a different spelling or just the last name. Do NOT fabricate data."
+
+        lines = [f"## GovTrack Legislators\n\nFound **{total}** results for \"{query}\"\n"]
+
+        for i, item in enumerate(items[:10], 1):
+            name = item.get("name", "Unknown")
+            govtrack_id = item.get("govtrack_id", "")
+            bioguide = item.get("bioguide_id", "")
+            leg_state = item.get("state", "")
+            leg_party = item.get("party", "")
+            role = item.get("role_type", "")
+            office = item.get("in_office", False)
+            status = "In office" if office else "Former"
+
+            lines.append(f"{i}. **{name}** ({leg_party}, {leg_state})")
+            parts = []
+            if role:
+                parts.append(role.title())
+            parts.append(status)
+            if parts:
+                lines.append(f"   {' | '.join(parts)}")
+
+            id_parts = []
+            if bioguide:
+                bg_url = self._bioguide_url(bioguide)
+                id_parts.append(f"Bioguide: [{bioguide}]({bg_url})")
+            if govtrack_id:
+                id_parts.append(f"GovTrack: {govtrack_id}")
+            if id_parts:
+                lines.append(f"   IDs: {' | '.join(id_parts)}")
+
+            if bioguide:
+                lines.append(f"   _→ `crosswalk_legislator(\"{name}\")` or `legislator_funding_profile(\"{bioguide}\")` for full profile_")
+            lines.append("")
+
+        if total > page * 25:
+            lines.append(f"_Showing page {page} of {(total + 24) // 25}. Use page={page + 1} for more._")
+
+        lines.append(self._sources_footer([
+            ("GovTrack.us", "https://www.govtrack.us"),
+            ("Congress Bioguide", "https://bioguide.congress.gov"),
+        ]))
+
+        await emitter.success_update(f"Found {total} legislators")
+        lines.append(self._provenance_footer(data))
+        return "\n".join(lines)
+
+    async def civic_get_bill_details(
+        self,
+        congress: int,
+        bill_type: str,
+        bill_number: int,
+        __event_emitter__: Callable[[dict], Any] = None,
+    ) -> str:
+        """
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get bill details from Congress.gov — title, sponsors, cosponsors, status, and policy area. Use after civic_get_lobbying_bills to see what bills an organization is lobbying on.</Function Definition>
+
+        :param congress: Congress number (e.g., 118 for 2023-2024)
+        :param bill_type: Bill type — "hr" (House bill), "s" (Senate bill), "hjres", "sjres", etc.
+        :param bill_number: Bill number (e.g., 1422)
+        :return: Bill title, sponsor, cosponsors, latest action, policy area, and Congress.gov link.
+        """
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.progress_update(f"Fetching bill {congress}/{bill_type}/{bill_number}...")
+
+        data, error = await self._get(
+            self._irs_url(),
+            f"/api/legislative/bills/{congress}/{bill_type}/{bill_number}",
+        )
+
+        if error:
+            await emitter.error_update(error)
+            return f"⚠️ Bill data unavailable: {error}. The bill may not be in the database yet."
+
+        title = data.get("title", "Unknown")
+        sponsor = data.get("sponsor_name", "Unknown")
+        sponsor_party = data.get("sponsor_party", "")
+        sponsor_state = data.get("sponsor_state", "")
+        introduced = data.get("introduced_date", "")
+        latest_date = data.get("latest_action_date", "")
+        latest_text = data.get("latest_action_text", "")
+        cosponsor_count = data.get("cosponsor_count", 0)
+        policy = data.get("policy_area", "")
+        url = data.get("congress_url", "")
+
+        lines = [f"## {bill_type.upper()} {bill_number} ({congress}th Congress)\n"]
+        lines.append(f"**{title}**\n")
+
+        parts = []
+        if sponsor:
+            parts.append(f"Sponsor: **{sponsor}** ({sponsor_party}, {sponsor_state})")
+        if introduced:
+            parts.append(f"Introduced: {introduced}")
+        if cosponsor_count:
+            parts.append(f"Cosponsors: {cosponsor_count}")
+        if policy:
+            parts.append(f"Policy area: {policy}")
+        for p in parts:
+            lines.append(f"- {p}")
+
+        if latest_text:
+            lines.append(f"\n**Latest action** ({latest_date}): {latest_text}")
+
+        # Cosponsors detail
+        cosponsors = data.get("cosponsors_json", [])
+        if cosponsors:
+            lines.append(f"\n### Cosponsors ({len(cosponsors)})\n")
+            for c in cosponsors[:15]:
+                c_name = c.get("name", "Unknown")
+                c_party = c.get("party", "")
+                c_state = c.get("state", "")
+                lines.append(f"- {c_name} ({c_party}, {c_state})")
+            if len(cosponsors) > 15:
+                lines.append(f"_...and {len(cosponsors) - 15} more cosponsors_")
+
+        lines.append(f"\n_→ `civic_get_bill_votes({congress}, \"{bill_type}\", {bill_number})` for roll call votes_")
+
+        src = [("Congress.gov", url or "https://www.congress.gov")]
+        lines.append(self._sources_footer(src))
+
+        await emitter.success_update(f"Bill details retrieved")
+        lines.append(self._provenance_footer(data))
+        return "\n".join(lines)
+
+    async def civic_get_bill_votes(
+        self,
+        congress: int,
+        bill_type: str,
+        bill_number: int,
+        page: int = 1,
+        __event_emitter__: Callable[[dict], Any] = None,
+    ) -> str:
+        """
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get per-legislator roll call votes on a specific bill. Shows who voted Yea, Nay, or abstained. Use after civic_get_bill_details to see how Congress voted.</Function Definition>
+
+        :param congress: Congress number (e.g., 118)
+        :param bill_type: Bill type — "hr", "s", "hjres", etc.
+        :param bill_number: Bill number
+        :param page: Page number (default: 1)
+        :return: Roll call votes with per-legislator breakdowns.
+        """
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.progress_update(f"Fetching votes for {bill_type.upper()} {bill_number}...")
+
+        data, error = await self._get(
+            self._irs_url(),
+            f"/api/legislative/bills/{congress}/{bill_type}/{bill_number}/votes",
+            {"page": page, "page_size": 25},
+        )
+
+        if error:
+            await emitter.error_update(error)
+            return f"⚠️ Vote data unavailable: {error}. The bill may not have had recorded votes, or vote data hasn't been synced yet."
+
+        items = data.get("results", [])
+        total = data.get("total_results", len(items))
+
+        if not items:
+            await emitter.success_update("Search complete")
+            return f"No recorded votes found for {bill_type.upper()} {bill_number} in the {congress}th Congress. The bill may not have reached a floor vote. Do NOT fabricate data."
+
+        lines = [f"## Roll Call Votes: {bill_type.upper()} {bill_number} ({congress}th Congress)\n"]
+        lines.append(f"**{total}** recorded vote(s)\n")
+
+        for vote in items:
+            vote_id = vote.get("govtrack_vote_id", "")
+            chamber = vote.get("chamber", "").title()
+            question = vote.get("question", "")
+            result = vote.get("result", "")
+            date = vote.get("vote_date", "")
+
+            lines.append(f"### {chamber} Vote — {date}")
+            lines.append(f"**Question:** {question}")
+            lines.append(f"**Result:** {result}")
+
+            lines.append(f"\n_Per-legislator vote data available via API: GET /api/legislative/votes/{vote_id}_")
+            lines.append("")
+
+        lines.append(self._sources_footer([
+            ("GovTrack.us", "https://www.govtrack.us"),
+            ("Congress.gov", "https://www.congress.gov"),
+        ]))
+
+        await emitter.success_update(f"Found {total} votes")
+        lines.append(self._provenance_footer(data))
+        return "\n".join(lines)
+
+    async def civic_get_lobbying_bills(
+        self,
+        filing_uuid: str,
+        __event_emitter__: Callable[[dict], Any] = None,
+    ) -> str:
+        """
+        : This Function is part of the Civic Research Intelligence Tool. Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.</TOOL INFO>
+
+        Get all bills referenced in a lobbying filing — connects lobbying activity to specific legislation. Use after civic_search_lobbying to see what bills an organization is lobbying on.</Function Definition>
+
+        :param filing_uuid: Lobbying filing UUID (from civic_search_lobbying results)
+        :return: List of bills referenced in the lobbying filing with congress number, bill type, and bill number.
+        """
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.progress_update(f"Fetching bill references for filing {filing_uuid[:12]}...")
+
+        data, error = await self._get(
+            self._irs_url(),
+            f"/api/legislative/lobbying-bills/{filing_uuid}",
+        )
+
+        if error:
+            await emitter.error_update(error)
+            return f"⚠️ Lobbying bill reference data unavailable: {error}."
+
+        # Response is a list, not paginated
+        items = data if isinstance(data, list) else data.get("results", [])
+
+        if not items:
+            await emitter.success_update("Search complete")
+            return f"No bill references found in lobbying filing {filing_uuid}. The filing may not reference specific bills, or bill refs haven't been parsed yet. Do NOT fabricate data."
+
+        lines = [f"## Bills Referenced in Lobbying Filing\n"]
+        lines.append(f"Filing UUID: `{filing_uuid}`\n")
+        lines.append(f"**{len(items)}** bill(s) referenced:\n")
+
+        for i, ref in enumerate(items, 1):
+            congress = ref.get("congress", "")
+            bill_type = ref.get("bill_type", "")
+            bill_number = ref.get("bill_number", "")
+            lines.append(f"{i}. **{bill_type.upper()} {bill_number}** ({congress}th Congress)")
+            lines.append(f"   _→ `civic_get_bill_details({congress}, \"{bill_type}\", {bill_number})` for full details_")
+            lines.append("")
+
+        lines.append("_Tip: Use `civic_get_bill_details` on each bill to see sponsors, cosponsors, and status._")
+        lines.append(self._sources_footer([
+            ("Senate LDA", "https://lda.senate.gov/system/public/"),
+        ]))
+
+        await emitter.success_update(f"Found {len(items)} bill references")
+        lines.append(self._provenance_footer())
         return "\n".join(lines)

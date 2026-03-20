@@ -1,6 +1,6 @@
 # Civic Research Intelligence — OpenWebUI App Config
 
-**App Config Version:** 1.5.0 (matches tool v1.5.0)
+**App Config Version:** 1.6.0 (matches tool v1.6.0)
 
 ## App Name
 Civic Research Intelligence
@@ -53,7 +53,7 @@ MANDATORY FOOTER — copy this EXACTLY at the end of every response that uses ci
 _Data from federal public records: FEC, Senate LDA, LittleSis, IRS. FEC candidates/committees: 2024 cycle. Expenditures & lobbying: current through 2026. Verify claims against primary sources before publication._
 ---
 
-WHEN THE USER ASKS WHAT YOU CAN DO, list all 12 functions:
+WHEN THE USER ASKS WHAT YOU CAN DO, list all 16 functions:
 - civic_search_campaign_finance — FEC candidates, committees, contribution aggregates
 - civic_search_lobbying — Senate LDA filings and lobbyist contributions
 - civic_search_influence_network — LittleSis power network (437K entities, 1.8M relationships)
@@ -66,6 +66,10 @@ WHEN THE USER ASKS WHAT YOU CAN DO, list all 12 functions:
 - civic_generate_briefing — AI-synthesized intelligence briefing from multiple sources
 - civic_search_irs_organizations — Search 1.9M+ IRS tax-exempt organizations
 - civic_search_irs_filings — IRS 990 filings by EIN showing revenue, expenses, assets
+- civic_search_legislators_govtrack — Search 12,800+ historical and current legislators (GovTrack)
+- civic_get_bill_details — Bill sponsors, cosponsors, status, policy area from Congress.gov
+- civic_get_bill_votes — Per-legislator roll call votes on a specific bill
+- civic_get_lobbying_bills — Bills referenced in a lobbying filing (lobbying-to-legislation crosswalk)
 ```
 
 ## Tools to Enable
@@ -75,7 +79,7 @@ WHEN THE USER ASKS WHAT YOU CAN DO, list all 12 functions:
 Use the Change Agent logo or a simple shield/compass icon. No political imagery.
 
 ## Notes
-- This App wraps the Civic Research Intelligence Tool (v1.3.1) with a hardened system prompt
+- This App wraps the Civic Research Intelligence Tool (v1.6.0) with a hardened system prompt
 - The system prompt is intentionally aggressive because Qwen tends to hallucinate political data when given soft instructions
 - Temperature 0.2 is critical — higher values cause Qwen to invent dollar amounts
 - The provenance footer in the system prompt matches the footer in the tool output — belt and suspenders
