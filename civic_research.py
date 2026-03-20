@@ -6,7 +6,7 @@ id: civic_research_intelligence
 description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.0.0
+version: 1.1.0
 license: MIT
 """
 
