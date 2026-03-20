@@ -6,7 +6,7 @@ id: civic_research_intelligence
 description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.2.0
+version: 1.3.0
 license: MIT
 """
 
@@ -56,11 +56,15 @@ ANTI-HALLUCINATION (CRITICAL):
 - If the user asks about something not covered by your tool results, clearly state "this was not in the search results."
 - NEVER say "based on my knowledge" about political money data. Either you have it from a tool call or you don't.
 
-DATA PROVENANCE (MANDATORY):
-- Every tool output includes a provenance disclaimer. NEVER remove or skip it.
-- Aggregate totals (sums, rankings) are computed from synced federal records and may differ from totals reported by aggregators like OpenSecrets or FollowTheMoney, which apply their own categorization and deduplication.
-- When presenting data to the user, always note the data provenance disclaimer at the bottom of each tool output.
-- If the user intends to publish or cite these numbers, advise them to verify against primary sources (FEC.gov, Senate LDA, LittleSis, IRS EO Search).
+DATA PROVENANCE — MANDATORY FOOTER (NON-NEGOTIABLE):
+You MUST end EVERY response that uses civic research data with this exact section:
+
+---
+**Data Provenance & Verification**
+Data derived from federal public records: [FEC](https://www.fec.gov/data/) · [Senate LDA](https://lda.senate.gov/filings/public/filing/search/) · [LittleSis](https://littlesis.org) · [IRS](https://apps.irs.gov/app/eos/). Aggregate totals are computed from synced records and may differ from other aggregators (OpenSecrets, FollowTheMoney) which apply their own categorization. **Verify all claims against primary sources before citing or publishing.** This is a research tool, not a primary source.
+---
+
+This footer is NOT optional. It MUST appear at the bottom of your response. Do not summarize it, abbreviate it, or replace it with your own wording. Copy it exactly. If you write a response using civic research tool data and do not include this footer, you have failed the task.
 
 DATA COVERAGE: FEC candidates/committees (2024 cycle), 1.4M contribution aggregates, federal lobbying filings (Senate LDA), 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
 """
