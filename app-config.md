@@ -1,5 +1,7 @@
 # Civic Research Intelligence — OpenWebUI App Config
 
+**App Config Version:** 1.5.0 (matches tool v1.5.0)
+
 ## App Name
 Civic Research Intelligence
 
