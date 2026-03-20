@@ -6,7 +6,7 @@ id: civic_research_intelligence
 description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.4.0
+version: 1.5.0
 license: MIT
 """
 
@@ -57,14 +57,13 @@ ANTI-HALLUCINATION (CRITICAL):
 - NEVER say "based on my knowledge" about political money data. Either you have it from a tool call or you don't.
 
 DATA PROVENANCE — MANDATORY FOOTER (NON-NEGOTIABLE):
-You MUST end EVERY response that uses civic research data with this exact section:
+You MUST end EVERY response that uses civic research data with this exact line (in italics, subtle, not bold):
 
 ---
-**Data Provenance & Verification**
-Data derived from federal public records: [FEC](https://www.fec.gov/data/) · [Senate LDA](https://lda.senate.gov/filings/public/filing/search/) · [LittleSis](https://littlesis.org) · [IRS](https://apps.irs.gov/app/eos/). Aggregate totals are computed from synced records and may differ from other aggregators (OpenSecrets, FollowTheMoney) which apply their own categorization. **Verify all claims against primary sources before citing or publishing.** This is a research tool, not a primary source.
+_Data from federal public records: FEC, Senate LDA, LittleSis, IRS. FEC candidates/committees: 2024 cycle. Expenditures & lobbying: current through 2026. Verify claims against primary sources before publication._
 ---
 
-This footer is NOT optional. It MUST appear at the bottom of your response. Do not summarize it, abbreviate it, or replace it with your own wording. Copy it exactly. If you write a response using civic research tool data and do not include this footer, you have failed the task.
+This footer is NOT optional. Keep it small and subtle — one line of italic text, not bold headers. If you write a response using civic research tool data and do not include this footer, you have failed the task.
 
 DATA COVERAGE: FEC candidates/committees (2024 cycle), expenditures and lobbying (current through 2026 cycle as filed), 1.4M contribution aggregates, 437K LittleSis influence entities, 1.8M relationships, 2.9M IRS 990 filings. Federal data only — state campaign finance not yet included.
 """
@@ -188,16 +187,13 @@ class Tools:
         """
         lines = [
             "\n\n---",
-            "**Data Provenance:** Derived from federal public records — "
-            "[FEC](https://www.fec.gov/data/) (campaign finance), "
-            "[Senate LDA](https://lda.senate.gov/filings/public/filing/search/) (lobbying), "
-            "[LittleSis](https://littlesis.org) (influence networks), "
-            "[IRS](https://apps.irs.gov/app/eos/) (tax-exempt orgs). "
-            "FEC candidate/committee data covers the **2024 election cycle**; "
-            "independent expenditures and lobbying filings include **current 2026 cycle** data as filed. "
-            "Aggregate totals computed from synced data and may differ from source totals. "
-            "**Verify claims against primary sources before publication.** "
-            "This is a research tool, not a primary source.",
+            "_Data from federal public records: "
+            "[FEC](https://www.fec.gov/data/), "
+            "[Senate LDA](https://lda.senate.gov/system/public/), "
+            "[LittleSis](https://littlesis.org), "
+            "[IRS](https://apps.irs.gov/app/eos/). "
+            "FEC candidates/committees: 2024 cycle. Expenditures & lobbying: current through 2026. "
+            "Verify claims against primary sources before publication._",
         ]
         # Surface data freshness if available in API response
         if data:
@@ -552,7 +548,7 @@ class Tools:
             lines.append(f"_Showing page {page} of {(total + 24) // 25}. Use page={page + 1} for more._")
 
         lines.append(f"\n_Tip: Use `org_influence_map(org_name)` to see an org's full political footprint including lobbying._")
-        sources.append(("Senate Lobbying Disclosure Act", "https://lda.senate.gov/filings/public/filing/search/"))
+        sources.append(("Senate Lobbying Disclosure Act", "https://lda.senate.gov/system/public/"))
         lines.append(self._sources_footer(sources))
 
         await emitter.success_update(f"Found {total} lobbying {search_type}")
@@ -928,7 +924,7 @@ class Tools:
         if influence:
             src.append(("LittleSis", "https://littlesis.org"))
         if lobbying:
-            src.append(("Senate LDA", "https://lda.senate.gov/filings/public/filing/search/"))
+            src.append(("Senate LDA", "https://lda.senate.gov/system/public/"))
         lines.append(self._sources_footer(src))
 
         await emitter.success_update(f"Funding profile complete for {name}")
@@ -1045,7 +1041,7 @@ class Tools:
                 if parts:
                     entry += f" ({', '.join(parts)})"
                 if filing_uuid:
-                    entry += f" [Filing]({self._lda_url(filing_uuid)})"
+                    entry += f" [Filing]({self._lda_filing_url(filing_uuid)})"
                 lines.append(entry)
             if len(client_filings) > 5:
                 lines.append(f"_...and {len(client_filings) - 5} more_")
@@ -1131,7 +1127,7 @@ class Tools:
         # Sources
         src = []
         if client_filings or reg_filings:
-            src.append(("Senate LDA Filings", "https://lda.senate.gov/filings/public/filing/search/"))
+            src.append(("Senate LDA Filings", "https://lda.senate.gov/system/public/"))
         if committees:
             src.append(("FEC Committees", "https://www.fec.gov/data/"))
         if entity:
@@ -1257,7 +1253,7 @@ class Tools:
         if contributions:
             src.append(("FEC Campaign Finance", "https://www.fec.gov/data/"))
         if lobbying:
-            src.append(("Senate LDA Filings", "https://lda.senate.gov/filings/public/filing/search/"))
+            src.append(("Senate LDA Filings", "https://lda.senate.gov/system/public/"))
         if awards:
             src.append(("USAspending.gov", "https://www.usaspending.gov"))
         lines.append(self._sources_footer(src))
@@ -1460,7 +1456,7 @@ class Tools:
         lines.append(f"_Data scope: Federal FEC filings only. State-level campaign finance and dark money (501(c)(4)) not included._")
         src = [("FEC.gov", "https://www.fec.gov/data/")]
         if lobby_data and not lobby_err:
-            src.append(("Senate LDA", "https://lda.senate.gov/filings/public/filing/search/"))
+            src.append(("Senate LDA", "https://lda.senate.gov/system/public/"))
         if inf_data and not inf_err:
             src.append(("LittleSis", "https://littlesis.org"))
         lines.append(self._sources_footer(src))
