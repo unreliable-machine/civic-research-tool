@@ -6,7 +6,7 @@ id: civic_research_intelligence
 description: Political money intelligence — campaign finance (FEC), lobbying (Senate LDA), influence networks (LittleSis), pay-to-play detection, and IRS 990 nonprofit filings.
 required_open_webui_version: 0.4.0
 requirements: httpx, pydantic
-version: 1.3.1
+version: 1.4.0
 license: MIT
 """
 
@@ -145,7 +145,7 @@ class Tools:
 
     @staticmethod
     def _lda_filing_url(filing_uuid: str) -> str:
-        return f"https://lda.senate.gov/filings/public/filing/{filing_uuid}/" if filing_uuid else ""
+        return f"https://lda.senate.gov/filings/public/filing/{filing_uuid}/print/" if filing_uuid else ""
 
     @staticmethod
     def _littlesis_url(entity_id) -> str:
@@ -1035,6 +1035,7 @@ class Tools:
                 reg = f.get("registrant_name", "Unknown")
                 amount = f.get("income", f.get("expenses"))
                 year = f.get("filing_year", "")
+                filing_uuid = f.get("filing_uuid", "")
                 entry = f"- **{reg}**"
                 parts = []
                 if amount is not None:
@@ -1043,6 +1044,8 @@ class Tools:
                     parts.append(str(year))
                 if parts:
                     entry += f" ({', '.join(parts)})"
+                if filing_uuid:
+                    entry += f" [Filing]({self._lda_url(filing_uuid)})"
                 lines.append(entry)
             if len(client_filings) > 5:
                 lines.append(f"_...and {len(client_filings) - 5} more_")
@@ -1070,7 +1073,11 @@ class Tools:
             for c in committees[:5]:
                 c_name = c.get("name", "Unknown")
                 c_type = c.get("committee_type_full", c.get("committee_type", ""))
-                lines.append(f"- **{c_name}** ({c_type})")
+                c_id = c.get("committee_id", "")
+                if c_id:
+                    lines.append(f"- **[{c_name}](https://www.fec.gov/data/committee/{c_id}/)** ({c_type})")
+                else:
+                    lines.append(f"- **{c_name}** ({c_type})")
             if len(committees) > 5:
                 lines.append(f"_...and {len(committees) - 5} more_")
             lines.append("")
